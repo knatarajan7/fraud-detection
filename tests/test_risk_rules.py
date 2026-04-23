@@ -201,3 +201,129 @@ def test_negative_prior_chargebacks_raises():
     tx = {**_clean_tx(), "prior_chargebacks": -1}
     with pytest.raises(ValueError, match="prior_chargebacks"):
         score_transaction(tx)
+
+
+# ---------------------------------------------------------------------------
+# Score clamping (0–100 bounds)
+# ---------------------------------------------------------------------------
+
+def test_score_never_exceeds_100():
+    tx = {
+        "device_risk_score": 100,
+        "is_international": 1,
+        "amount_usd": 5000,
+        "velocity_24h": 10,
+        "failed_logins_24h": 10,
+        "prior_chargebacks": 5,
+    }
+    assert score_transaction(tx) == 100
+
+
+def test_score_never_goes_below_zero():
+    # All signals at their lowest — score should floor at 0, never go negative
+    tx = _clean_tx()
+    assert score_transaction(tx) >= 0
+
+
+# ---------------------------------------------------------------------------
+# label_risk boundary values
+# ---------------------------------------------------------------------------
+
+def test_label_risk_boundary_high():
+    assert label_risk(60) == "high"
+
+
+def test_label_risk_boundary_medium_upper():
+    assert label_risk(59) == "medium"
+
+
+def test_label_risk_boundary_medium_lower():
+    assert label_risk(30) == "medium"
+
+
+def test_label_risk_boundary_low():
+    assert label_risk(29) == "low"
+
+
+def test_label_risk_zero():
+    assert label_risk(0) == "low"
+
+
+def test_label_risk_hundred():
+    assert label_risk(100) == "high"
+
+
+# ---------------------------------------------------------------------------
+# Signal isolation — each signal contributes the expected increment
+# ---------------------------------------------------------------------------
+
+def test_device_risk_high_contributes_25():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "device_risk_score": 70}
+    assert score_transaction(tx) - base == 25
+
+
+def test_device_risk_medium_contributes_10():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "device_risk_score": 40}
+    assert score_transaction(tx) - base == 10
+
+
+def test_device_risk_below_40_contributes_nothing():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "device_risk_score": 39}
+    assert score_transaction(tx) == base
+
+
+def test_international_contributes_15():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "is_international": 1}
+    assert score_transaction(tx) - base == 15
+
+
+def test_amount_over_1000_contributes_25():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "amount_usd": 1000}
+    assert score_transaction(tx) - base == 25
+
+
+def test_amount_500_to_999_contributes_10():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "amount_usd": 500}
+    assert score_transaction(tx) - base == 10
+
+
+def test_velocity_high_contributes_20():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "velocity_24h": 6}
+    assert score_transaction(tx) - base == 20
+
+
+def test_velocity_moderate_contributes_5():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "velocity_24h": 3}
+    assert score_transaction(tx) - base == 5
+
+
+def test_failed_logins_high_contributes_20():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "failed_logins_24h": 5}
+    assert score_transaction(tx) - base == 20
+
+
+def test_failed_logins_moderate_contributes_10():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "failed_logins_24h": 2}
+    assert score_transaction(tx) - base == 10
+
+
+def test_prior_chargebacks_two_contributes_20():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "prior_chargebacks": 2}
+    assert score_transaction(tx) - base == 20
+
+
+def test_prior_chargebacks_one_contributes_5():
+    base = score_transaction(_clean_tx())
+    tx = {**_clean_tx(), "prior_chargebacks": 1}
+    assert score_transaction(tx) - base == 5
